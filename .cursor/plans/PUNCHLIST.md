@@ -169,7 +169,7 @@ shared = { path = "../shared" }
 ---
 
 ### TICKET-007 — Collector: WebSocket Push
-**Status:** In Progress
+**Status:** Complete
 **Depends on:** TICKET-005
 **Files to create:**
 - `collector/src/api/ws.rs`
