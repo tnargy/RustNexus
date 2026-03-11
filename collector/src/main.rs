@@ -1,7 +1,15 @@
+mod api;
 mod config;
 mod db;
 
-use std::{path::PathBuf, process};
+use std::{net::SocketAddr, path::PathBuf, process};
+
+/// Shared application state threaded through all route handlers.
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: db::Db,
+    pub offline_threshold_secs: u64,
+}
 
 #[tokio::main]
 async fn main() {
@@ -42,7 +50,7 @@ async fn main() {
 
     tracing::info!(listen_addr = %cfg.listen_addr, "collector starting");
 
-    let _pool = match db::init_pool(&cfg.database_path).await {
+    let pool = match db::init_pool(&cfg.database_path).await {
         Ok(p) => {
             tracing::info!(path = %cfg.database_path, "database ready");
             p
@@ -52,5 +60,31 @@ async fn main() {
             process::exit(1);
         }
     };
+
+    let state = AppState { pool, offline_threshold_secs: cfg.offline_threshold_secs };
+    let app = api::router(state);
+
+    let addr: SocketAddr = match cfg.listen_addr.parse() {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!(error = %e, addr = %cfg.listen_addr, "invalid listen address");
+            process::exit(1);
+        }
+    };
+
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!(error = %e, %addr, "failed to bind");
+            process::exit(1);
+        }
+    };
+
+    tracing::info!(%addr, "listening");
+
+    if let Err(e) = axum::serve(listener, app).await {
+        tracing::error!(error = %e, "server error");
+        process::exit(1);
+    }
 }
 
