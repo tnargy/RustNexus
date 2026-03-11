@@ -48,7 +48,7 @@ chrono = { version = "0.4", features = ["serde"] }
 ## Phase 2 — Collector
 
 ### TICKET-003 — Collector Crate Skeleton + Config
-**Status:** Not Started
+**Status:** Complete
 **Depends on:** TICKET-002
 **Files to create:**
 - `collector/Cargo.toml`
@@ -80,7 +80,7 @@ shared = { path = "../shared" }
 ---
 
 ### TICKET-004 — Collector Database Layer + Migrations
-**Status:** Not Started
+**Status:** Complete
 **Depends on:** TICKET-003
 **Files to create:**
 - `collector/src/db/mod.rs`
@@ -107,7 +107,7 @@ shared = { path = "../shared" }
 ---
 
 ### TICKET-005 — Collector: Metric Ingest Endpoint
-**Status:** Not Started
+**Status:** Complete
 **Depends on:** TICKET-004
 **Files to create / modify:**
 - `collector/src/api/mod.rs`
@@ -127,7 +127,7 @@ shared = { path = "../shared" }
 ---
 
 ### TICKET-006 — Collector: Read Endpoints (Agents, Snapshots, History, Thresholds)
-**Status:** Not Started
+**Status:** Complete
 **Depends on:** TICKET-005
 **Files to create:**
 - `collector/src/api/agents.rs`
@@ -169,7 +169,7 @@ shared = { path = "../shared" }
 ---
 
 ### TICKET-007 — Collector: WebSocket Push
-**Status:** Not Started
+**Status:** In Progress
 **Depends on:** TICKET-005
 **Files to create:**
 - `collector/src/api/ws.rs`
