@@ -1,15 +1,31 @@
 pub mod agents;
+pub mod errors;
+pub mod health;
 pub mod ingest;
 pub mod thresholds;
 pub mod ws;
 
 use axum::{
+    http::header,
+    response::IntoResponse,
     routing::{get, post, put},
     Router,
 };
 use tower_http::{cors::CorsLayer, services::{ServeDir, ServeFile}};
 
 use crate::AppState;
+
+/// Serves the embedded [`openapi.yaml`](../../openapi.yaml) specification.
+///
+/// The spec is embedded at compile time via [`include_str!`] so that the
+/// binary is fully self-contained and does not depend on the file being
+/// present at runtime.
+async fn openapi_spec() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
+        include_str!("../../openapi.yaml"),
+    )
+}
 
 /// Build the full application [`Router`].
 ///
@@ -26,6 +42,9 @@ pub fn router(state: AppState, dashboard_dir: impl AsRef<std::path::Path>) -> Ro
     let serve_dir = ServeDir::new(dashboard_dir).not_found_service(fallback);
 
     Router::new()
+        // Operations
+        .route("/health", get(health::health_check))
+        .route("/openapi.yaml", get(openapi_spec))
         // Ingest
         .route("/api/v1/metrics", post(ingest::ingest_metrics))
         // Agents

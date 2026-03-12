@@ -96,11 +96,39 @@ The `RUST_LOG` environment variable overrides `log_level` in both binaries.
 
 ---
 
+## Standards
+
+| Standard | How it is applied |
+|----------|-------------------|
+| **[RFC 7807](https://www.rfc-editor.org/rfc/rfc7807)** — Problem Details for HTTP APIs | All non-2xx responses carry a `Content-Type: application/problem+json` body with `type`, `title`, `status`, and `detail` fields. |
+| **[ISO 8601](https://www.iso.org/iso-8601-date-and-time-format.html) / [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339)** — Date and time | Every timestamp in request and response bodies is serialized as `2026-03-12T12:00:00Z`. |
+| **[OpenAPI 3.0.3](https://spec.openapis.org/oas/v3.0.3)** — API description format | A machine-readable contract is embedded in the collector binary and served at `GET /openapi.yaml`. Use it with Swagger UI, Redoc, or any OpenAPI-compatible tooling. |
+
+**RFC 7807 error body example**
+
+```json
+{
+  "type": "about:blank",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Agent 'server-01' was not found."
+}
+```
+
+---
+
 ## API Reference
 
 Base URL: `http://<collector-host>:<port>`
 
 All endpoints return JSON. A permissive CORS policy is applied to every response.
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Liveness check. Returns `200 {"status":"ok","version":"…","timestamp":"…"}`. Suitable for load-balancer probes and Kubernetes liveness checks. |
+| `GET` | `/openapi.yaml` | OpenAPI 3.0.3 specification for this API (YAML). |
 
 ### Metrics ingest
 
@@ -190,6 +218,7 @@ Any path not matched by the API is served from the compiled dashboard SPA. Unkno
 RustNexus/
 ├── agent/          # Agent binary (Rust)
 ├── collector/      # Collector binary + REST API + WebSocket (Rust / Axum / SQLite)
+│   └── openapi.yaml   # OpenAPI 3.0.3 specification (embedded in the binary; also served at /openapi.yaml)
 ├── dashboard/      # React + TypeScript frontend (Vite)
 └── shared/         # Common data types shared between agent and collector
 ```

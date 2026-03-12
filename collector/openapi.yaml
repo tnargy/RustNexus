@@ -1,0 +1,724 @@
+openapi: "3.0.3"
+
+info:
+  title: RustNexus Collector API
+  description: |
+    REST + WebSocket API for the RustNexus distributed system monitoring collector.
+
+    ### Standards applied
+
+    | Standard | Application |
+    |----------|-------------|
+    | **RFC 7807** — Problem Details for HTTP APIs | All error responses use `Content-Type: application/problem+json` and carry a structured `ProblemDetail` body. |
+    | **ISO 8601 / RFC 3339** — Date and time | All timestamps are serialized in RFC 3339 format (e.g. `2026-03-12T12:00:00Z`). |
+    | **OpenAPI 3.0.3** — API description | This document. Machine-readable contract for tooling, SDK generation, and documentation. |
+
+    ### Error responses
+
+    Every non-2xx response body conforms to [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807)
+    and is served with `Content-Type: application/problem+json`.
+
+    ```json
+    {
+      "type": "about:blank",
+      "title": "Not Found",
+      "status": 404,
+      "detail": "Agent 'server-01' was not found."
+    }
+    ```
+
+  version: "0.1.0"
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness check
+      description: |
+        Returns HTTP 200 as long as the process is alive and able to handle
+        requests.  Suitable for load-balancer health checks and container
+        orchestration probes (Kubernetes liveness / readiness).
+      tags: [Operations]
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /openapi.yaml:
+    get:
+      operationId: getOpenApiSpec
+      summary: OpenAPI 3.0.3 specification (this document)
+      description: Returns the machine-readable API specification as YAML.
+      tags: [Operations]
+      responses:
+        "200":
+          description: OpenAPI specification document.
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /api/v1/metrics:
+    post:
+      operationId: ingestMetrics
+      summary: Ingest a metric payload from an agent
+      description: |
+        Accepts a [`MetricPayload`] JSON body from a running agent, persists the
+        agent record, metric row, and disk readings inside a single SQLite
+        transaction, then broadcasts a `metric_update` event to all connected
+        WebSocket clients.
+
+        This endpoint is used exclusively by the agent binary and is not
+        intended for direct client use.
+      tags: [Metrics]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MetricPayload"
+      responses:
+        "200":
+          description: Payload accepted and persisted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/agents:
+    get:
+      operationId: listAgents
+      summary: List all known agents
+      description: |
+        Returns all agents that have reported at least one metric, together
+        with their computed status and most-recent metric snapshot.  Returns
+        an empty array (not 404) when no agents have reported yet.
+      tags: [Agents]
+      responses:
+        "200":
+          description: Array of agent summaries (may be empty).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/agents/{agent_id}/snapshot:
+    get:
+      operationId: getAgentSnapshot
+      summary: Latest metric snapshot for a single agent
+      description: |
+        Returns the most-recent metric reading for the given agent.
+        Returns `404` when the agent is unknown.
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/AgentId"
+      responses:
+        "200":
+          description: Most-recent snapshot for the requested agent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricSnapshot"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/agents/{agent_id}/history:
+    get:
+      operationId: getAgentHistory
+      summary: Time-series metric history for a single agent
+      description: |
+        Returns up to 300 data points (subsampled when the raw count exceeds
+        that limit) for the requested time window, ordered by `timestamp` ASC.
+        Returns an empty array when no data exists for the window.
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/AgentId"
+        - name: range
+          in: query
+          description: Time window to return. Defaults to `1h`.
+          required: false
+          schema:
+            type: string
+            enum: ["1h", "6h", "24h", "7d"]
+            default: "1h"
+      responses:
+        "200":
+          description: Array of snapshots ordered by timestamp ascending (may be empty).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MetricSnapshot"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/thresholds:
+    get:
+      operationId: listThresholds
+      summary: List all configured alert thresholds
+      tags: [Thresholds]
+      responses:
+        "200":
+          description: Array of threshold records (may be empty).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Threshold"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+    post:
+      operationId: createThreshold
+      summary: Create a new alert threshold
+      description: |
+        Creates a new threshold for a specific metric.  The threshold can
+        target all agents (omit `agent_id`) or a single agent.
+        `metric_name` must be one of `cpu`, `memory`, or `disk`.
+        A value of `0.0` disables alerting for that level.
+      tags: [Thresholds]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateThresholdRequest"
+            example:
+              agent_id: null
+              metric_name: cpu
+              warning_value: 75.0
+              critical_value: 90.0
+      responses:
+        "201":
+          description: Threshold created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Threshold"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/thresholds/{id}:
+    put:
+      operationId: updateThreshold
+      summary: Update the warning and critical values of an existing threshold
+      description: |
+        Only `warning_value` and `critical_value` may be changed; the
+        `metric_name` and `agent_id` are immutable after creation.
+      tags: [Thresholds]
+      parameters:
+        - $ref: "#/components/parameters/ThresholdId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateThresholdRequest"
+      responses:
+        "200":
+          description: Threshold updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Threshold"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+    delete:
+      operationId: deleteThreshold
+      summary: Delete a threshold
+      tags: [Thresholds]
+      parameters:
+        - $ref: "#/components/parameters/ThresholdId"
+      responses:
+        "204":
+          description: Threshold deleted successfully.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /ws:
+    get:
+      operationId: websocket
+      summary: WebSocket connection for live metric updates
+      description: |
+        Upgrades the HTTP connection to a WebSocket.  The server broadcasts a
+        `metric_update` event to **all** connected clients after each
+        successful metric ingest.
+
+        If a client falls more than 256 messages behind, the oldest messages
+        are dropped to prevent unbounded memory growth.
+      tags: [Real-time]
+      responses:
+        "101":
+          description: Switching Protocols — WebSocket connection established.
+
+components:
+
+  parameters:
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      description: Unique identifier for the agent.
+      schema:
+        type: string
+      example: server-01
+
+    ThresholdId:
+      name: id
+      in: path
+      required: true
+      description: Unique numeric identifier for the threshold record.
+      schema:
+        type: integer
+        format: int64
+      example: 1
+
+  responses:
+    BadRequest:
+      description: The request body is malformed or contains an invalid field value.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: "Bad Request"
+            status: 400
+            detail: "Invalid metric_name 'latency'. Must be one of: cpu, memory, disk."
+
+    NotFound:
+      description: The requested resource was not found.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: "Not Found"
+            status: 404
+            detail: "Agent 'server-01' was not found."
+
+    ServiceUnavailable:
+      description: A backend database error occurred; the request may be retried.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: "Service Unavailable"
+            status: 503
+            detail: "A database error occurred while listing agents; please retry."
+
+  schemas:
+
+    ProblemDetail:
+      description: |
+        RFC 7807 Problem Details for HTTP APIs.
+        Used for all non-2xx responses; media type is `application/problem+json`.
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: |
+            URI reference that identifies the problem type.
+            Uses `"about:blank"` when no specific type URI is defined.
+          example: "about:blank"
+        title:
+          type: string
+          description: Short, human-readable summary of the problem type.
+          example: "Not Found"
+        status:
+          type: integer
+          description: HTTP status code for this occurrence.
+          example: 404
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+          example: "Agent 'server-01' was not found."
+
+    HealthResponse:
+      type: object
+      required: [status, version, timestamp]
+      properties:
+        status:
+          type: string
+          description: Always `"ok"` when the service is healthy.
+          example: "ok"
+        version:
+          type: string
+          description: Semantic version of the running collector binary.
+          example: "0.1.0"
+        timestamp:
+          type: string
+          format: date-time
+          description: |
+            Current UTC timestamp in ISO 8601 / RFC 3339 format
+            (e.g. `2026-03-12T12:00:00Z`).
+          example: "2026-03-12T12:00:00Z"
+
+    MetricPayload:
+      description: Metric payload sent by an agent on each collection interval.
+      type: object
+      required: [agent_id, timestamp, cpu_percent, memory, disks, network, uptime_seconds]
+      properties:
+        agent_id:
+          type: string
+          description: Unique identifier of the reporting agent.
+          example: "server-01"
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 / RFC 3339 timestamp of when the metrics were collected.
+          example: "2026-03-12T12:00:00Z"
+        cpu_percent:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          description: CPU utilisation as a percentage (0–100).
+          example: 14.2
+        memory:
+          $ref: "#/components/schemas/MemoryInfo"
+        disks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiskInfo"
+        network:
+          $ref: "#/components/schemas/NetworkInfo"
+        uptime_seconds:
+          type: integer
+          format: int64
+          description: System uptime in seconds.
+          example: 86400
+
+    MemoryInfo:
+      type: object
+      required: [used_bytes, total_bytes, percent]
+      properties:
+        used_bytes:
+          type: integer
+          format: int64
+          example: 4294967296
+        total_bytes:
+          type: integer
+          format: int64
+          example: 17179869184
+        percent:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          example: 25.0
+
+    DiskInfo:
+      type: object
+      required: [mount_point, used_bytes, total_bytes, percent]
+      properties:
+        mount_point:
+          type: string
+          example: "/"
+        used_bytes:
+          type: integer
+          format: int64
+          example: 53687091200
+        total_bytes:
+          type: integer
+          format: int64
+          example: 107374182400
+        percent:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          example: 50.0
+
+    NetworkInfo:
+      type: object
+      required: [bytes_in, bytes_out]
+      properties:
+        bytes_in:
+          type: integer
+          format: int64
+          description: Total bytes received since the agent started.
+          example: 102400
+        bytes_out:
+          type: integer
+          format: int64
+          description: Total bytes sent since the agent started.
+          example: 51200
+
+    AgentStatus:
+      type: string
+      enum: [online, warning, critical, offline]
+      description: |
+        Computed status for an agent:
+        - `online`: Reporting within `offline_threshold_secs`, no threshold breaches.
+        - `warning`: Reporting; at least one metric is above its warning threshold.
+        - `critical`: Reporting; at least one metric is above its critical threshold.
+        - `offline`: No report received within `offline_threshold_secs`.
+
+    AgentResponse:
+      description: Agent summary as returned by `GET /api/v1/agents`.
+      type: object
+      required: [agent_id, first_seen_at, last_seen_at, duplicate_flag, status]
+      properties:
+        agent_id:
+          type: string
+          example: "server-01"
+        first_seen_at:
+          type: string
+          format: date-time
+          example: "2026-01-15T10:00:00Z"
+        last_seen_at:
+          type: string
+          format: date-time
+          example: "2026-03-12T12:05:30Z"
+        duplicate_flag:
+          type: boolean
+          description: True when the agent_id has been seen from more than one source address.
+          example: false
+        latest_metric:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MetricSnapshot"
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+
+    MetricSnapshot:
+      description: A metric row from the database, including associated disk readings.
+      type: object
+      required:
+        - id
+        - agent_id
+        - timestamp
+        - cpu_percent
+        - memory_used_bytes
+        - memory_total_bytes
+        - memory_percent
+        - network_bytes_in
+        - network_bytes_out
+        - uptime_seconds
+        - disks
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 42
+        agent_id:
+          type: string
+          example: "server-01"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-03-12T12:05:30Z"
+        cpu_percent:
+          type: number
+          format: double
+          example: 25.5
+        memory_used_bytes:
+          type: integer
+          format: int64
+          example: 4294967296
+        memory_total_bytes:
+          type: integer
+          format: int64
+          example: 17179869184
+        memory_percent:
+          type: number
+          format: double
+          example: 25.0
+        network_bytes_in:
+          type: integer
+          format: int64
+          example: 102400
+        network_bytes_out:
+          type: integer
+          format: int64
+          example: 51200
+        uptime_seconds:
+          type: integer
+          format: int64
+          example: 86400
+        disks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiskReading"
+
+    DiskReading:
+      description: A disk reading row from the database.
+      type: object
+      required: [id, metric_id, mount_point, used_bytes, total_bytes, percent]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        metric_id:
+          type: integer
+          format: int64
+          example: 42
+        mount_point:
+          type: string
+          example: "/"
+        used_bytes:
+          type: integer
+          format: int64
+          example: 53687091200
+        total_bytes:
+          type: integer
+          format: int64
+          example: 107374182400
+        percent:
+          type: number
+          format: double
+          example: 50.0
+
+    Threshold:
+      description: Alert threshold record as stored in the database.
+      type: object
+      required: [id, metric_name, warning_value, critical_value]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        agent_id:
+          type: string
+          nullable: true
+          description: |
+            Agent-specific threshold when set; `null` means the threshold
+            applies globally to all agents.
+          example: null
+        metric_name:
+          type: string
+          enum: [cpu, memory, disk]
+          example: cpu
+        warning_value:
+          type: number
+          format: double
+          description: Percentage threshold for a warning alert. `0.0` disables alerting for this level.
+          example: 75.0
+        critical_value:
+          type: number
+          format: double
+          description: Percentage threshold for a critical alert. `0.0` disables alerting for this level.
+          example: 90.0
+
+    CreateThresholdRequest:
+      description: Request body for `POST /api/v1/thresholds`.
+      type: object
+      required: [metric_name, warning_value, critical_value]
+      properties:
+        agent_id:
+          type: string
+          nullable: true
+          description: |
+            Target agent identifier. Omit (or set to `null`) for a global
+            threshold that applies to all agents.
+          example: null
+        metric_name:
+          type: string
+          enum: [cpu, memory, disk]
+          example: cpu
+        warning_value:
+          type: number
+          format: double
+          example: 75.0
+        critical_value:
+          type: number
+          format: double
+          example: 90.0
+
+    UpdateThresholdRequest:
+      description: |
+        Request body for `PUT /api/v1/thresholds/{id}`.
+        Only `warning_value` and `critical_value` are mutable.
+      type: object
+      required: [warning_value, critical_value]
+      properties:
+        warning_value:
+          type: number
+          format: double
+          example: 80.0
+        critical_value:
+          type: number
+          format: double
+          example: 95.0
+
+    WsMetricUpdateEvent:
+      description: |
+        Event pushed over the WebSocket after each successful metric ingest.
+      type: object
+      required:
+        - event
+        - agent_id
+        - timestamp
+        - status
+        - cpu_percent
+        - memory
+        - disks
+        - network
+        - uptime_seconds
+        - duplicate_flag
+      properties:
+        event:
+          type: string
+          enum: [metric_update]
+        agent_id:
+          type: string
+          example: "server-01"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-03-12T12:05:30Z"
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        cpu_percent:
+          type: number
+          format: double
+          example: 14.2
+        memory:
+          $ref: "#/components/schemas/MemoryInfo"
+        disks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiskInfo"
+        network:
+          $ref: "#/components/schemas/NetworkInfo"
+        uptime_seconds:
+          type: integer
+          format: int64
+          example: 86400
+        duplicate_flag:
+          type: boolean
+          example: false
