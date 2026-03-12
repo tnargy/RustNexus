@@ -10,6 +10,7 @@ use crate::{
     db::{self, AgentSummary, MetricSnapshot, Threshold},
     AppState,
 };
+use super::errors::ProblemDetail;
 
 // ---------------------------------------------------------------------------
 // Status computation
@@ -89,14 +90,17 @@ pub struct AgentResponse {
 /// array (not 404) when no agents have been seen yet.
 pub async fn list_agents(
     State(state): State<AppState>,
-) -> Result<Json<Vec<AgentResponse>>, StatusCode> {
+) -> Result<Json<Vec<AgentResponse>>, ProblemDetail> {
     let (summaries, thresholds) = tokio::try_join!(
         db::queries::get_agents_summary(&state.pool),
         db::queries::get_thresholds(&state.pool),
     )
     .map_err(|e| {
         tracing::error!(error = %e, "database error in list_agents");
-        StatusCode::SERVICE_UNAVAILABLE
+        ProblemDetail::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "A database error occurred while listing agents; please retry.",
+        )
     })?;
 
     let responses = summaries
@@ -116,17 +120,23 @@ pub async fn list_agents(
 pub async fn get_snapshot(
     State(state): State<AppState>,
     Path(agent_id): Path<String>,
-) -> Result<Json<MetricSnapshot>, StatusCode> {
+) -> Result<Json<MetricSnapshot>, ProblemDetail> {
     let snapshot = db::queries::get_snapshot(&state.pool, &agent_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "database error in get_snapshot");
-            StatusCode::SERVICE_UNAVAILABLE
+            ProblemDetail::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "A database error occurred while fetching the snapshot; please retry.",
+            )
         })?;
 
     match snapshot {
         Some(s) => Ok(Json(s)),
-        None => Err(StatusCode::NOT_FOUND),
+        None => Err(ProblemDetail::new(
+            StatusCode::NOT_FOUND,
+            format!("Agent '{agent_id}' was not found."),
+        )),
     }
 }
 
@@ -144,7 +154,7 @@ pub async fn get_history(
     State(state): State<AppState>,
     Path(agent_id): Path<String>,
     Query(params): Query<HistoryQuery>,
-) -> Result<Json<Vec<MetricSnapshot>>, StatusCode> {
+) -> Result<Json<Vec<MetricSnapshot>>, ProblemDetail> {
     let duration_secs: i64 = match params.range.as_deref().unwrap_or("1h") {
         "6h" => 6 * 3600,
         "24h" => 24 * 3600,
@@ -157,7 +167,10 @@ pub async fn get_history(
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "database error in get_history");
-            StatusCode::SERVICE_UNAVAILABLE
+            ProblemDetail::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "A database error occurred while fetching history; please retry.",
+            )
         })?;
 
     // Subsample to at most 300 data points by taking every Nth row.

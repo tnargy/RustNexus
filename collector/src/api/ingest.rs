@@ -6,24 +6,28 @@ use axum::{
 use shared::MetricPayload;
 
 use crate::AppState;
+use super::errors::ProblemDetail;
 
 /// `POST /api/v1/metrics`
 ///
 /// Accepts a [`MetricPayload`] JSON body, persists the agent record, metric row,
 /// and disk readings inside a single transaction, then returns 200 OK.
 ///
-/// Error mapping:
+/// Error mapping (RFC 7807 `ProblemDetail` body on all errors):
 /// - Malformed / missing-field body → 400 Bad Request
 /// - Database failure → 503 Service Unavailable
 pub async fn ingest_metrics(
     State(state): State<AppState>,
     payload: Result<Json<MetricPayload>, JsonRejection>,
-) -> StatusCode {
+) -> Result<StatusCode, ProblemDetail> {
     let Json(payload) = match payload {
         Ok(p) => p,
         Err(e) => {
             tracing::debug!(error = %e, "rejected malformed ingest payload");
-            return StatusCode::BAD_REQUEST;
+            return Err(ProblemDetail::new(
+                StatusCode::BAD_REQUEST,
+                format!("Invalid request body: {e}"),
+            ));
         }
     };
 
@@ -36,11 +40,14 @@ pub async fn ingest_metrics(
                 state.tx.clone(),
                 payload,
             ));
-            StatusCode::OK
+            Ok(StatusCode::OK)
         }
         Err(e) => {
             tracing::error!(error = %e, "database error during metric ingest");
-            StatusCode::SERVICE_UNAVAILABLE
+            Err(ProblemDetail::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "A database error occurred while persisting metrics; please retry.",
+            ))
         }
     }
 }
