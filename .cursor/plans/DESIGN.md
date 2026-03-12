@@ -1,4 +1,4 @@
-# System Creeper — Dashboard UI Design
+# RustNexus — Dashboard UI Design
 
 ## Design Principles
 
@@ -79,7 +79,7 @@ The header is always visible. It is the only persistent UI element.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  System Creeper                                   ● Connected        │
+│  RustNexus                                        ● Connected        │
 ├──────────────────────────────────────────────────────────────────────┤
 │  Agents (21)    Filter: [All ▼]    [Search agents...]               │
 ├─────────────────┬─────────────────┬─────────────────┬───────────────┤
@@ -163,7 +163,7 @@ Shown when the WebSocket connection is lost. Overlays the Agent Grid view conten
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  System Creeper                    ✖  DISCONNECTED — reconnecting... │
+│  RustNexus                         ✖  DISCONNECTED — reconnecting... │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────────────────┐   │
 │  │  ⚠  Data unavailable. Connection to collector lost.          │   │

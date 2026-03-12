@@ -1,4 +1,4 @@
-# System Creeper — Feature Punchlist
+# RustNexus — Feature Punchlist
 
 > **How to use this document:** Each ticket is a self-contained unit of work. Hand individual tickets (or a group) to an implementing agent along with SPEC.md, DESIGN.md, and the relevant section of the architecture notes in plan.md. Tickets are sequenced by dependency — do not skip ahead.
 
@@ -289,7 +289,7 @@ shared = { path = "../shared" }
 
 **Acceptance criteria:**
 - `npm install` completes without errors
-- `npm run dev` starts Vite dev server and serves a blank page with the app title "System Creeper"
+- `npm run dev` starts Vite dev server and serves a blank page with the app title "RustNexus"
 - TypeScript config is strict (`"strict": true`)
 - Tailwind CSS is active (a test `className="text-red-500"` renders in red)
 
@@ -469,7 +469,7 @@ interface MetricUpdateEvent {
 
 **Acceptance criteria:**
 - Props: `connected: boolean`
-- Left: "System Creeper" in `text-xl font-semibold`
+- Left: "RustNexus" in `text-xl font-semibold`
 - Right: when `connected === true` → green dot + "Connected"; when false → red X + "DISCONNECTED — reconnecting..." with red background pill
 - Uses Lucide `Wifi` / `WifiOff` icons
 

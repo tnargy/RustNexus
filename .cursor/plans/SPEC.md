@@ -1,6 +1,6 @@
 ---
 name: Architecture Design
-overview: "Define the complete architecture for the system_creeper platform: repository layout, database schema, API contract, WebSocket protocol, Rust crate selections, and dashboard UI layout — everything needed before handing off to an implementing agent."
+overview: "Define the complete architecture for the RustNexus platform: repository layout, database schema, API contract, WebSocket protocol, Rust crate selections, and dashboard UI layout — everything needed before handing off to an implementing agent."
 todos:
   - id: save-spec
     content: Save final spec from plan.md as a standalone SPEC.md in the project root
@@ -26,12 +26,12 @@ todos:
 isProject: false
 ---
 
-# System Creeper — Architecture Design
+# RustNexus — Architecture Design
 
 ## Repository Layout (Cargo Workspace + Dashboard)
 
 ```
-system_creeper/
+RustNexus/
 ├── Cargo.toml              ← workspace root
 ├── Cargo.lock
 ├── shared/                 ← library crate (payload & threshold types shared by agent + collector)
