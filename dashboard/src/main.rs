@@ -221,6 +221,7 @@ fn app() -> Html {
     let loading_agents = use_state(|| true);
 
     let agents = use_state(Vec::<AgentSummary>::new);
+    let agents_ref = use_mut_ref(Vec::<AgentSummary>::new);
     let thresholds = use_state(Vec::<Threshold>::new);
 
     let selected_agent_id = use_state(|| Option::<String>::None);
@@ -233,6 +234,7 @@ fn app() -> Html {
 
     {
         let agents = agents.clone();
+        let agents_ref = agents_ref.clone();
         let thresholds = thresholds.clone();
         let load_error = load_error.clone();
         let loading_agents = loading_agents.clone();
@@ -245,6 +247,7 @@ fn app() -> Html {
 
                 match (agents_result, thresholds_result) {
                     (Ok(next_agents), Ok(next_thresholds)) => {
+                        *agents_ref.borrow_mut() = next_agents.clone();
                         agents.set(next_agents);
                         thresholds.set(next_thresholds);
                         load_error.set(None);
@@ -261,6 +264,7 @@ fn app() -> Html {
     {
         let ws_status = ws_status.clone();
         let agents = agents.clone();
+        let agents_ref = agents_ref.clone();
 
         use_effect_with((), move |_| {
             spawn_local(async move {
@@ -280,8 +284,9 @@ fn app() -> Html {
                                         let parsed = serde_json::from_str::<MetricUpdateEvent>(&text);
                                         if let Ok(event) = parsed {
                                             if event.event == "metric_update" {
-                                                let mut next = (*agents).clone();
+                                                let mut next = agents_ref.borrow().clone();
                                                 upsert_agent_from_ws(&mut next, event);
+                                                *agents_ref.borrow_mut() = next.clone();
                                                 agents.set(next);
                                             }
                                         }

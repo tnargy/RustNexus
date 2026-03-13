@@ -40,28 +40,57 @@ cd RustNexus
 cargo build --release --bin agent --bin collector
 
 # Build the dashboard (Rust WASM)
-cargo build --release -p dashboard
+cd dashboard && trunk build --release && cd ..
 ```
 
-Binaries will be at `target/release/agent` and `target/release/collector`.
+Binaries will be at `target/release/agent` and `target/release/collector`. The dashboard static files will be in `dashboard/dist/`, which the collector serves automatically.
 
-For a production dashboard bundle, run:
-
-```bash
-trunk build dashboard/index.html --release --dist dashboard/dist
-```
-
-This produces static files in `dashboard/dist/` for the collector to serve.
-
-For local dashboard development, run:
+For local dashboard development (`Trunk.toml` already handles the API and WebSocket proxies):
 
 ```bash
-trunk serve dashboard/index.html --proxy-backend http://127.0.0.1:8080
+cd dashboard && trunk serve
 ```
 
 ### Pre-built artifacts
 
 Downloadable `.zip` (Windows) and `.tar.gz` (Linux) packages are produced by the manual GitHub Actions workflow. Navigate to **Actions → Build → Run workflow** to trigger a build, then download the artifact from the completed run. Each package contains both binaries and the built dashboard.
+
+**Linux**
+
+```bash
+# Extract the archive
+tar -xzf rustnexus-linux-x86_64.tar.gz -C rustnexus/
+cd rustnexus/
+
+# Start the collector (dashboard is served from ./dashboard/)
+./collector collector.toml
+
+# On each monitored host, start the agent
+./agent agent.toml
+```
+
+**Windows**
+
+Extract `rustnexus-windows-x86_64.zip`, create config files following the Configuration section below, then:
+
+```powershell
+.\collector.exe collector.toml
+.\agent.exe agent.toml
+```
+
+See the Configuration section for all available options. Example config files (`collector.example.toml`, `agent.example.toml`) are included in the repository.
+
+---
+
+## Screenshots
+
+### Landing Page — Agent Overview
+
+![Landing page showing all monitored agents](docs/images/landing.png)
+
+### Detail View — Single Agent
+
+![Detailed metrics view for a single agent](docs/images/detail.png)
 
 ---
 
@@ -226,9 +255,20 @@ Any path not matched by the API is served from the compiled dashboard SPA. Unkno
 
 ```
 RustNexus/
-├── agent/          # Agent binary (Rust)
-├── collector/      # Collector binary + REST API + WebSocket (Rust / Axum / SQLite)
-│   └── openapi.yaml   # OpenAPI 3.0.3 specification (embedded in the binary; also served at /openapi.yaml)
-├── dashboard/      # Rust WASM dashboard (Yew) + compiled static output in dashboard/dist/
-└── shared/         # Common data types shared between agent and collector
+├── Cargo.toml              # workspace manifest
+├── agent/                  # agent binary (Rust)
+│   ├── agent.example.toml
+│   └── src/
+├── collector/              # collector binary + REST API + WebSocket (Rust / Axum / SQLite)
+│   ├── collector.example.toml
+│   ├── openapi.yaml        # OpenAPI 3.0.3 spec (embedded in binary; served at GET /openapi.yaml)
+│   └── src/
+├── dashboard/              # Rust WASM frontend (Yew)
+│   ├── Trunk.toml          # trunk build/serve config (target, dist dir, dev proxies)
+│   ├── index.html
+│   ├── dist/               # compiled static output served by the collector
+│   └── src/
+├── data/                   # SQLite database directory (created at runtime)
+└── shared/                 # common types shared between agent and collector
+    └── src/
 ```
