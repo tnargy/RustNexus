@@ -8,10 +8,10 @@ port = 5173
 open = false
 
 [[proxy]]
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8080/api/"
 rewrite = "/api/"
 
 [[proxy]]
-backend = "ws://127.0.0.1:8080"
+backend = "ws://127.0.0.1:8080/ws"
 rewrite = "/ws"
 ws = true
