@@ -30,19 +30,18 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Add WASM target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install Trunk
+        run: cargo install trunk --locked
 
       - name: Build Rust release binaries
         run: cargo build --release --bin agent --bin collector
 
-      - name: Build dashboard
+      - name: Build dashboard (Rust WASM)
         working-directory: dashboard
-        run: |
-          npm install
-          npm run build
+        run: trunk build --release
 
       - name: Stage artifacts (Linux)
         if: runner.os == 'Linux'

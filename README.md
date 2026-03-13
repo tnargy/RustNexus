@@ -1,6 +1,6 @@
 # RustNexus
 
-A lightweight distributed system monitoring tool. Agents run on the machines you want to watch, ship metrics to a central collector, and a React dashboard gives you a live view of everything.
+A lightweight distributed system monitoring tool. Agents run on the machines you want to watch, ship metrics to a central collector, and a dashboard gives you a live view of everything.
 
 ```
 [agent] ──POST /api/v1/metrics──► [collector] ──SQLite
@@ -18,7 +18,7 @@ A lightweight distributed system monitoring tool. Agents run on the machines you
 |-----------|-------------|
 | **agent** | Runs on each monitored host. Collects CPU, memory, disk, network, and uptime at a configurable interval and ships them to the collector. Buffers payloads locally if the collector is unreachable. |
 | **collector** | Central server. Accepts metrics via HTTP, persists them to SQLite, evaluates alert thresholds, and pushes live updates to connected dashboard clients over WebSocket. Also serves the dashboard static files. |
-| **dashboard** | React + TypeScript SPA. Shows all agents in a card grid with real-time status, per-agent metric charts, and threshold configuration. |
+| **dashboard** | Rust WASM dashboard frontend (Yew). |
 
 ---
 
@@ -27,7 +27,7 @@ A lightweight distributed system monitoring tool. Agents run on the machines you
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (stable toolchain)
-- [Node.js](https://nodejs.org/) 20+
+- [`trunk`](https://trunkrs.dev/) for serving/building the Rust WASM dashboard
 
 ### Build from source
 
@@ -39,15 +39,25 @@ cd RustNexus
 # Build collector and agent (release)
 cargo build --release --bin agent --bin collector
 
-# Build the dashboard
-cd dashboard
-npm install
-npm run build
-cd ..
+# Build the dashboard (Rust WASM)
+cargo build --release -p dashboard
 ```
 
-Binaries will be at `target/release/agent` and `target/release/collector`.  
-The dashboard static files will be at `dashboard/dist/`.
+Binaries will be at `target/release/agent` and `target/release/collector`.
+
+For a production dashboard bundle, run:
+
+```bash
+trunk build dashboard/index.html --release --dist dashboard/dist
+```
+
+This produces static files in `dashboard/dist/` for the collector to serve.
+
+For local dashboard development, run:
+
+```bash
+trunk serve dashboard/index.html --proxy-backend http://127.0.0.1:8080
+```
 
 ### Pre-built artifacts
 
@@ -219,6 +229,6 @@ RustNexus/
 ├── agent/          # Agent binary (Rust)
 ├── collector/      # Collector binary + REST API + WebSocket (Rust / Axum / SQLite)
 │   └── openapi.yaml   # OpenAPI 3.0.3 specification (embedded in the binary; also served at /openapi.yaml)
-├── dashboard/      # React + TypeScript frontend (Vite)
+├── dashboard/      # Rust WASM dashboard (Yew) + compiled static output in dashboard/dist/
 └── shared/         # Common data types shared between agent and collector
 ```
