@@ -86,11 +86,11 @@ See the Configuration section for all available options. Example config files (`
 
 ### Landing Page — Agent Overview
 
-![Landing page showing all monitored agents](docs/images/landing.png)
+![Landing page showing all monitored agents](docs/images/Nodes.jpg)
 
 ### Detail View — Single Agent
 
-![Detailed metrics view for a single agent](docs/images/detail.png)
+![Detailed metrics view for a single agent](docs/images/Server.jpg)
 
 ---
 
