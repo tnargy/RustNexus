@@ -1,26 +1,64 @@
 use axum::{
-    extract::{rejection::JsonRejection, State},
-    http::StatusCode,
-    Json,
+    body::Bytes,
+    extract::State,
+    http::{HeaderMap, StatusCode},
 };
+use shared::auth::{verify_auth_header, AuthError};
 use shared::MetricPayload;
 
-use crate::AppState;
 use super::errors::ProblemDetail;
+use crate::AppState;
 
 /// `POST /api/v1/metrics`
 ///
 /// Accepts a [`MetricPayload`] JSON body, persists the agent record, metric row,
 /// and disk readings inside a single transaction, then returns 200 OK.
 ///
+/// Authentication is performed first: when `hmac_secret` is non-empty the
+/// request must carry a valid `Authorization: HMAC …` header whose timestamp
+/// falls within 300 s of the collector's clock.  Missing or invalid credentials
+/// yield 401 Unauthorized.
+///
 /// Error mapping (RFC 7807 `ProblemDetail` body on all errors):
-/// - Malformed / missing-field body → 400 Bad Request
-/// - Database failure → 503 Service Unavailable
+/// - Missing / invalid HMAC signature   → 401 Unauthorized
+/// - Malformed / missing-field body     → 400 Bad Request
+/// - Database failure                   → 503 Service Unavailable
 pub async fn ingest_metrics(
     State(state): State<AppState>,
-    payload: Result<Json<MetricPayload>, JsonRejection>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<StatusCode, ProblemDetail> {
-    let Json(payload) = match payload {
+    // ── Auth ──────────────────────────────────────────────────────────────────
+    let auth_header_value = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if let Err(e) = verify_auth_header(&state.hmac_secret, auth_header_value, &body) {
+        let (status, detail) = match e {
+            AuthError::Missing => (
+                StatusCode::UNAUTHORIZED,
+                "Authorization header is missing.".to_string(),
+            ),
+            AuthError::Malformed => (
+                StatusCode::UNAUTHORIZED,
+                "Authorization header is malformed.".to_string(),
+            ),
+            AuthError::InvalidSignature => (
+                StatusCode::UNAUTHORIZED,
+                "HMAC signature is invalid.".to_string(),
+            ),
+            AuthError::TimestampExpired => (
+                StatusCode::UNAUTHORIZED,
+                "Request timestamp is outside the allowed 300 s window.".to_string(),
+            ),
+        };
+        tracing::debug!(error = %e, "rejected request due to auth failure");
+        return Err(ProblemDetail::new(status, detail));
+    }
+
+    // ── Parse JSON ────────────────────────────────────────────────────────────
+    let payload: MetricPayload = match serde_json::from_slice(&body) {
         Ok(p) => p,
         Err(e) => {
             tracing::debug!(error = %e, "rejected malformed ingest payload");
@@ -31,6 +69,7 @@ pub async fn ingest_metrics(
         }
     };
 
+    // ── Persist ───────────────────────────────────────────────────────────────
     match persist(&state, &payload).await {
         Ok(()) => {
             // Fire-and-forget: build and push the WS event without blocking

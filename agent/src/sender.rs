@@ -22,6 +22,8 @@ pub struct Sender {
     buffer: VecDeque<MetricPayload>,
     /// Maximum number of payloads to keep in memory.
     capacity: usize,
+    /// Shared HMAC-SHA256 secret.  Empty string means auth is disabled.
+    hmac_secret: String,
 }
 
 impl Sender {
@@ -29,13 +31,22 @@ impl Sender {
     ///
     /// `capacity` should be `buffer_duration_secs / interval_secs` (integer
     /// division, minimum 1).
-    pub fn new(collector_url: String, buffer_duration_secs: u64, interval_secs: u64) -> Self {
+    ///
+    /// `hmac_secret` is the shared secret used to sign each request.  Pass an
+    /// empty string to disable authentication (dev / backward-compatible mode).
+    pub fn new(
+        collector_url: String,
+        buffer_duration_secs: u64,
+        interval_secs: u64,
+        hmac_secret: String,
+    ) -> Self {
         let capacity = (buffer_duration_secs / interval_secs.max(1)).max(1) as usize;
         Self {
             client: Client::new(),
             collector_url,
             buffer: VecDeque::with_capacity(capacity + 1),
             capacity,
+            hmac_secret,
         }
     }
 
@@ -79,13 +90,30 @@ impl Sender {
 
     /// Send a single payload to the collector.
     ///
+    /// Serialises the payload to JSON bytes first so the same byte slice can
+    /// be used both as the request body and as input to the HMAC computation.
+    ///
     /// Returns `Ok(())` on HTTP 200; `Err(String)` for network errors or any
     /// non-2xx status code.
     async fn try_send(&self, payload: &MetricPayload) -> Result<(), String> {
-        let response = self
+        // Serialize to bytes so we can sign the exact body we will send.
+        let body_bytes =
+            serde_json::to_vec(payload).map_err(|e| format!("serialization error: {e}"))?;
+
+        let mut request = self
             .client
             .post(&self.collector_url)
-            .json(payload)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body_bytes.clone());
+
+        // Attach the Authorization header when auth is enabled.
+        if let Some(auth_value) =
+            shared::auth::make_auth_header(&self.hmac_secret, &payload.agent_id, &body_bytes)
+        {
+            request = request.header(reqwest::header::AUTHORIZATION, auth_value);
+        }
+
+        let response = request
             .send()
             .await
             .map_err(|e| format!("network error: {e}"))?;

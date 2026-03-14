@@ -230,8 +230,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "chrono",
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
  "shared",
  "sqlx",
  "tokio",
@@ -2402,8 +2404,11 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "hex",
+ "hmac",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -1,77 +1,83 @@
 name: Build
 
 on:
-  workflow_dispatch:
+    workflow_dispatch:
 
 env:
-  CARGO_TERM_COLOR: always
+    CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact_name: rustnexus-linux-x86_64
-            artifact_ext: .tar.gz
-          - os: windows-latest
-            artifact_name: rustnexus-windows-x86_64
-            artifact_ext: .zip
+    build:
+        name: Build (${{ matrix.os }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                include:
+                    - os: ubuntu-latest
+                      artifact_name: rustnexus-linux-x86_64
+                      artifact_ext: .tar.gz
+                    - os: windows-latest
+                      artifact_name: rustnexus-windows-x86_64
+                      artifact_ext: .zip
 
-    steps:
-      - uses: actions/checkout@v4
+        steps:
+            - uses: actions/checkout@v4
 
-      - name: Install OpenSSL (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+            - name: Install OpenSSL (Linux)
+              if: runner.os == 'Linux'
+              run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Add WASM target
-        run: rustup target add wasm32-unknown-unknown
+            - name: Security audit
+              if: runner.os == 'Linux'
+              uses: rustsec/audit-check@v2
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Trunk
-        run: cargo install trunk --locked
+            - name: Add WASM target
+              run: rustup target add wasm32-unknown-unknown
 
-      - name: Build Rust release binaries
-        run: cargo build --release --bin agent --bin collector
+            - name: Install Trunk
+              run: cargo install trunk --locked
 
-      - name: Build dashboard (Rust WASM)
-        working-directory: dashboard
-        run: trunk build --release
+            - name: Build Rust release binaries
+              run: cargo build --release --bin agent --bin collector
 
-      - name: Stage artifacts (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p staging/dashboard
-          cp target/release/agent staging/
-          cp target/release/collector staging/
-          cp -r dashboard/dist/. staging/dashboard/
+            - name: Build dashboard (Rust WASM)
+              working-directory: dashboard
+              run: trunk build --release
 
-      - name: Stage artifacts (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path staging\dashboard | Out-Null
-          Copy-Item target\release\agent.exe staging\
-          Copy-Item target\release\collector.exe staging\
-          Copy-Item -Recurse dashboard\dist\* staging\dashboard\
+            - name: Stage artifacts (Linux)
+              if: runner.os == 'Linux'
+              run: |
+                  mkdir -p staging/dashboard
+                  cp target/release/agent staging/
+                  cp target/release/collector staging/
+                  cp -r dashboard/dist/. staging/dashboard/
 
-      - name: Compress (Linux)
-        if: runner.os == 'Linux'
-        run: tar -czf ${{ matrix.artifact_name }}.tar.gz -C staging .
+            - name: Stage artifacts (Windows)
+              if: runner.os == 'Windows'
+              shell: pwsh
+              run: |
+                  New-Item -ItemType Directory -Force -Path staging\dashboard | Out-Null
+                  Copy-Item target\release\agent.exe staging\
+                  Copy-Item target\release\collector.exe staging\
+                  Copy-Item -Recurse dashboard\dist\* staging\dashboard\
 
-      - name: Compress (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -Path staging\* -DestinationPath "${{ matrix.artifact_name }}.zip"
+            - name: Compress (Linux)
+              if: runner.os == 'Linux'
+              run: tar -czf ${{ matrix.artifact_name }}.tar.gz -C staging .
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_name }}${{ matrix.artifact_ext }}
-          overwrite: true
+            - name: Compress (Windows)
+              if: runner.os == 'Windows'
+              shell: pwsh
+              run: Compress-Archive -Path staging\* -DestinationPath "${{ matrix.artifact_name }}.zip"
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ matrix.artifact_name }}
+                  path: ${{ matrix.artifact_name }}${{ matrix.artifact_ext }}
+                  overwrite: true

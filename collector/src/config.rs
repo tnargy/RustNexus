@@ -29,6 +29,12 @@ pub struct Config {
     pub log_level: String,
     #[serde(default = "default_dashboard_dir")]
     pub dashboard_dir: String,
+    /// Shared HMAC-SHA256 secret used to verify incoming metric payloads.
+    ///
+    /// When empty (the default) authentication is disabled entirely, preserving
+    /// backward compatibility with agents that have not yet configured a secret.
+    #[serde(default)]
+    pub hmac_secret: String,
 }
 
 /// Load a [`Config`] from the TOML file at `path`.

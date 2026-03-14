@@ -44,6 +44,7 @@ async fn main() {
         cfg.collector_url.clone(),
         cfg.buffer_duration_secs,
         cfg.interval_secs,
+        cfg.hmac_secret.clone(),
     );
 
     // Network baseline carried across ticks to compute byte deltas.
@@ -60,18 +61,21 @@ async fn main() {
         // Collect metrics; treat any unexpected error as a logged warning, not
         // a crash.  In practice `collect_metrics` is infallible, but wrapping
         // future-proofs the loop.
-        let payload =
-            match tokio::time::timeout(interval, metrics::collect_metrics(&agent_id, &mut net_baseline)).await {
-                Ok(p) => p,
-                Err(_) => {
-                    tracing::warn!("metric collection timed out — skipping tick");
-                    continue;
-                }
-            };
+        let payload = match tokio::time::timeout(
+            interval,
+            metrics::collect_metrics(&agent_id, &mut net_baseline),
+        )
+        .await
+        {
+            Ok(p) => p,
+            Err(_) => {
+                tracing::warn!("metric collection timed out — skipping tick");
+                continue;
+            }
+        };
 
         // Send (with buffered retry).  Errors are logged inside `send_with_retry`;
         // we never propagate them here so the loop keeps running.
         sender.send_with_retry(payload).await;
     }
 }
-

@@ -15,6 +15,9 @@ pub struct AppState {
     /// to all connected WebSocket clients.  The receiver half is subscribed to
     /// inside each WebSocket handler task.
     pub tx: broadcast::Sender<String>,
+    /// Shared HMAC-SHA256 secret used to verify incoming metric payloads.
+    /// Empty string means authentication is disabled (dev / backward-compatible mode).
+    pub hmac_secret: String,
 }
 
 #[tokio::main]
@@ -43,6 +46,7 @@ async fn main() {
                 retention_days: 30,
                 log_level: "info".to_string(),
                 dashboard_dir: "./dashboard/dist".to_string(),
+                hmac_secret: String::new(),
             }
         }
     };
@@ -50,9 +54,7 @@ async fn main() {
     // Initialize structured logging.  The level is taken from the config; the
     // RUST_LOG env-var can still override it for development convenience.
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            tracing_subscriber::EnvFilter::new(&cfg.log_level)
-        });
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&cfg.log_level));
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
     tracing::info!(listen_addr = %cfg.listen_addr, "collector starting");
@@ -76,7 +78,12 @@ async fn main() {
     // startup, then every 24 hours, deleting metrics older than retention_days.
     retention::spawn(pool.clone(), cfg.retention_days);
 
-    let state = AppState { pool, offline_threshold_secs: cfg.offline_threshold_secs, tx };
+    let state = AppState {
+        pool,
+        offline_threshold_secs: cfg.offline_threshold_secs,
+        tx,
+        hmac_secret: cfg.hmac_secret,
+    };
     let app = api::router(state, &cfg.dashboard_dir);
 
     let addr: SocketAddr = match cfg.listen_addr.parse() {
@@ -102,4 +109,3 @@ async fn main() {
         process::exit(1);
     }
 }
-

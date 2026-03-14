@@ -36,6 +36,13 @@ pub struct Config {
     /// Overridable at runtime via the `RUST_LOG` environment variable.
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    /// Shared HMAC-SHA256 secret used to sign outgoing metric payloads.
+    ///
+    /// When empty (the default) authentication is disabled entirely, preserving
+    /// backward compatibility with collectors that have not yet configured a
+    /// secret.
+    #[serde(default)]
+    pub hmac_secret: String,
 }
 
 impl Config {
@@ -92,9 +99,7 @@ mod tests {
 
     #[test]
     fn load_minimal_config() {
-        let f = write_toml(
-            r#"collector_url = "http://localhost:8080/api/v1/metrics""#,
-        );
+        let f = write_toml(r#"collector_url = "http://localhost:8080/api/v1/metrics""#);
         let cfg = load(f.path()).unwrap();
         assert_eq!(cfg.collector_url, "http://localhost:8080/api/v1/metrics");
         assert_eq!(cfg.interval_secs, 30);
@@ -128,6 +133,7 @@ log_level            = "debug"
             interval_secs: 30,
             buffer_duration_secs: 300,
             log_level: "info".to_string(),
+            hmac_secret: String::new(),
         };
         assert_eq!(cfg.effective_agent_id(), "my-server");
     }
@@ -140,6 +146,7 @@ log_level            = "debug"
             interval_secs: 30,
             buffer_duration_secs: 300,
             log_level: "info".to_string(),
+            hmac_secret: String::new(),
         };
         let id = cfg.effective_agent_id();
         // Hostname should be non-empty (or at least the known fallback).
