@@ -1,4 +1,4 @@
-# RustNexus
+# RustNexus [![Rust](https://github.com/tnargy/RustNexus/actions/workflows/rust.yml/badge.svg)](https://github.com/tnargy/RustNexus/actions/workflows/rust.yml)
 
 A lightweight distributed system monitoring tool. Agents run on the machines you want to watch, ship metrics to a central collector, and a dashboard gives you a live view of everything.
 
