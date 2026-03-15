@@ -421,7 +421,11 @@ fn app() -> Html {
         let loading_agents = loading_agents.clone();
 
         use_effect_with((), move |_| {
+            let alive = Rc::new(Cell::new(true));
+            let alive_task = alive.clone();
+
             spawn_local(async move {
+                // ── Initial load (shows the loading spinner) ──────────────
                 loading_agents.set(true);
                 let agents_result = api::fetch_agents().await;
                 let thresholds_result = api::fetch_thresholds().await;
@@ -437,8 +441,52 @@ fn app() -> Html {
                 }
 
                 loading_agents.set(false);
+
+                // ── Background poll every 30 s (no spinner) ───────────────
+                // This is what catches offline transitions: the collector
+                // computes status server-side on every request, so an agent
+                // that stops sending will be marked offline here even though
+                // no WS event is ever pushed for it.
+                loop {
+                    for _ in 0..30 {
+                        if !alive_task.get() {
+                            return;
+                        }
+                        TimeoutFuture::new(1_000).await;
+                    }
+
+                    if !alive_task.get() {
+                        return;
+                    }
+
+                    if let Ok(next_agents) = api::fetch_agents().await {
+                        // Merge: keep WS-delivered snapshots for agents that
+                        // are still online, but let the REST response correct
+                        // the status (and last_seen_at) for every agent.
+                        let mut merged = next_agents;
+                        let current = agents_ref.borrow().clone();
+                        for agent in merged.iter_mut() {
+                            if let Some(existing) =
+                                current.iter().find(|a| a.agent_id == agent.agent_id)
+                            {
+                                // If the REST response says the agent is still
+                                // online/warning/critical, prefer the richer
+                                // snapshot that WS may have provided more
+                                // recently. If REST says offline the snapshot
+                                // is irrelevant so we leave it as-is.
+                                if agent.status.as_str() != "offline" && existing.snapshot.is_some()
+                                {
+                                    agent.snapshot = existing.snapshot.clone();
+                                }
+                            }
+                        }
+                        *agents_ref.borrow_mut() = merged.clone();
+                        agents.set(merged);
+                    }
+                }
             });
-            || ()
+
+            move || alive.set(false)
         });
     }
 
