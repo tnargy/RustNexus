@@ -101,10 +101,11 @@ See the Configuration section for all available options. Example config files (`
 ```toml
 listen_addr            = "0.0.0.0:8080"
 database_path          = "./data/metrics.db"
+dashboard_dir          = "/dashboard"
 offline_threshold_secs = 120    # seconds without a report before an agent is marked offline
 retention_days         = 30     # how long metric history is kept
 log_level              = "info" # error | warn | info | debug | trace
-# dashboard_dir defaults to ./dashboard/dist
+hmac_secret            = "super-secret-password"          # set to a non-empty string to enable HMAC-SHA256 request signing
 ```
 
 Start the collector:
@@ -123,6 +124,8 @@ collector_url        = "http://collector-host:8080/api/v1/metrics"
 interval_secs        = 30          # how often metrics are collected and sent
 buffer_duration_secs = 300         # how long to buffer payloads when offline (5 min)
 log_level            = "info"
+hmac_secret          = "super-secret-password"          # set to a non-empty string to enable HMAC-SHA256 request signing
+tags                 = "console"          # comma-separated, e.g. "production,web,eu-west"
 ```
 
 Start the agent:
